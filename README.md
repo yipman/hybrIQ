@@ -42,7 +42,7 @@ HybrIQ implements a hybrid classical-quantum approach for training and inference
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/yourusername/hybrid-transformer.git
+   git clone https://github.com/yipman/hybrIQ.git
    cd hybrid-transformer
    ```
 
