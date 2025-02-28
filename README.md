@@ -13,6 +13,8 @@ HybrIQ implements a hybrid classical-quantum approach for training and inference
 - **Hybrid Design**: Integrates classical GPU-based processing with quantum simulation for specific operations
 - **Quantum Components**: Implements quantum algorithms for inner product estimation (attention mechanism) and matrix-vector multiplication (feed-forward layers)
 - **Simulation-Based**: Runs on IBM's quantum simulator via Qiskit, so no real quantum hardware is needed
+- **Comprehensive Benchmarking**: Built-in benchmarking suite to compare quantum vs. classical performance across various parameters
+- **Performance Visualization**: Generate plots and reports to analyze how quantum acceleration scales with model size, layers, quantum noise, and shot counts
 
 > This project is an educational tool and research prototype, showcasing how quantum computing might enhance machine learning workflows, particularly for transformer architectures.
 
@@ -21,6 +23,7 @@ HybrIQ implements a hybrid classical-quantum approach for training and inference
 - [Introduction](#introduction)
 - [Setup](#setup)
 - [Usage](#usage)
+- [Benchmarking](#benchmarking)
 - [Project Structure](#project-structure)
 - [Contributing](#contributing)
 - [Reporting Issues](#reporting-issues)
@@ -45,7 +48,7 @@ HybrIQ implements a hybrid classical-quantum approach for training and inference
 
 2. **Install dependencies**:
    ```bash
-   pip install torch==2.0.0 qiskit==0.46.0 numpy
+   pip install torch==2.0.0 qiskit==0.46.0 numpy matplotlib tqdm pandas
    ```
 
 3. **(Optional) Use a virtual environment**:
@@ -94,18 +97,57 @@ The project includes a simplified transformer model with quantum-accelerated ope
 
 These functions run on Qiskit's qasm_simulator and are designed for small-scale demonstration.
 
+## Benchmarking
+
+HybrIQ includes a comprehensive benchmarking suite to evaluate quantum vs. classical performance. The benchmarks measure:
+
+- **Size Scaling**: How performance scales with model dimension
+- **Layer Scaling**: How performance scales with transformer layers
+- **Noise Sensitivity**: How quantum noise affects results
+- **Shot Count Effects**: Trade-offs between accuracy and performance with different quantum shot counts
+
+### Running Benchmarks
+
+You can run benchmarks using the command-line interface:
+
+```bash
+# Quick benchmarks for testing
+python benchmark.py
+
+# Full comprehensive benchmark suite
+python benchmark.py --full
+
+# Specific benchmark types
+python benchmark.py --size    # Only run size scaling benchmark
+python benchmark.py --layers  # Only run layer scaling benchmark
+python benchmark.py --shots   # Only run shot count benchmark
+python benchmark.py --noise   # Only run noise sensitivity benchmark
+```
+
+### Benchmark Results
+
+The benchmarking suite automatically generates:
+- JSON files with raw performance data
+- Visualizations showing performance comparisons
+- CSV reports summarizing all benchmark results
+
+Results are saved to `/d:/HybrIQ/benchmark_results/` by default.
+
 ## Project Structure
 
 ```
-hybrid-transformer/
+HybrIQ/
 │
 ├── model.py             # Core hybrid model and quantum functions
+├── benchmark.py         # Benchmarking suite for performance evaluation
+├── quantum_utils.py     # Utilities for quantum circuit manipulation
 ├── requirements.txt     # Dependency list
-├── README.md            # This documentation
-└── LICENSE              # MIT License
+└── README.md            # This documentation
 ```
 
 - **model.py**: Contains the hybrid transformer implementation, including quantum and classical components.
+- **benchmark.py**: Comprehensive benchmarking suite with visualization capabilities.
+- **quantum_utils.py**: Helper functions for quantum circuit analysis and visualization.
 - **requirements.txt**: Lists all required packages for easy installation.
 
 ## Contributing
