@@ -1,26 +1,35 @@
 import torch
-import numpy as np
+import numpy as np  # Fix: Use numpy instead of numpy 
 import time
 import matplotlib.pyplot as plt
 from model import Model, forward_pass, config, HybridConfig
 import logging
 from tqdm import tqdm
+from qiskit_aer import Aer  # Fixed import for Aer
 import os
 import json
 from datetime import datetime
 import pandas as pd
 from quantum_utils import quantum_resource_estimator, compare_classical_quantum
 
-# Setup logging
+# Setup logging - fix typo in format string
 logging.basicConfig(level=logging.INFO, 
-                   format='%(asctime)s - %(name)s - %(levelname=s - %(message)s')
+                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('HybrIQ.benchmark')
 
 class BenchmarkSuite:
-    def __init__(self, save_dir='/d:/HybrIQ/benchmark_results'):
+    def __init__(self, save_dir=None):
+        # Fix: Use a Windows-compatible path format and default to current directory if not specified
+        if save_dir is None:
+            # Use current directory + benchmark_results
+            save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'benchmark_results')
+        
         self.save_dir = save_dir
+        # Create directory if it doesn't exist
         os.makedirs(save_dir, exist_ok=True)
         self.results = {}
+        
+        logger.info(f"Benchmark results will be saved to {self.save_dir}")
         
     def run_size_scaling_test(self, sizes=[4, 8, 16, 32], n_layers=1, trials=3):
         """Test how performance scales with model dimension"""
@@ -167,8 +176,9 @@ class BenchmarkSuite:
             
             # Create simple depolarizing noise model with this error rate
             if noise > 0:
-                from qiskit.providers.aer.noise import NoiseModel
-                from qiskit.providers.aer.noise import depolarizing_error
+                # Fix: Update import to use qiskit_aer.noise instead of qiskit.providers.aer.noise
+                from qiskit_aer.noise import NoiseModel
+                from qiskit_aer.noise import depolarizing_error
                 
                 noise_model = NoiseModel()
                 error = depolarizing_error(noise, 1)
@@ -581,3 +591,250 @@ if __name__ == "__main__":
     print(report.head(10))
     if len(report) > 10:
         print(f"... and {len(report) - 10} more rows")
+
+"""
+Benchmark script for HybrIQ quantum-classical hybrid model.
+"""
+
+import time
+import numpy as np
+import matplotlib.pyplot as plt
+from model import Model, forward_pass, config, HybridConfig
+from circuit_optimizer import optimize_circuit
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('HybrIQ.benchmark')
+
+def run_benchmark(model_dims=[4, 8, 16], batch_size=2, seq_len=3, runs=3):
+    """
+    Run benchmarks comparing quantum vs classical execution with different model dimensions.
+    
+    Args:
+        model_dims: List of model dimensions to test
+        batch_size: Batch size for testing
+        seq_len: Sequence length for testing
+        runs: Number of runs for each configuration
+    
+    Returns:
+        Dictionary of benchmark results
+    """
+    results = {
+        "dimensions": model_dims,
+        "quantum": {"time": [], "std": []},
+        "classical": {"time": [], "std": []},
+        "ratio": []
+    }
+    
+    for dim in model_dims:
+        logger.info(f"Benchmarking with dimension {dim}")
+        
+        # Create model with current dimension
+        model = Model(vocab_size=100, d_model=dim, n_layers=2, d_ff=dim*4)
+        
+        # Create input
+        batch = torch.zeros(batch_size, seq_len, dtype=torch.long)
+        
+        # Run quantum benchmark
+        q_times = []
+        for i in range(runs):
+            start = time.time()
+            forward_pass(model, batch, use_quantum=True)
+            q_times.append(time.time() - start)
+            logger.info(f"  Quantum run {i+1}/{runs}: {q_times[-1]:.4f}s")
+        
+        # Run classical benchmark
+        c_times = []
+        for i in range(runs):
+            start = time.time()
+            forward_pass(model, batch, use_quantum=False)
+            c_times.append(time.time() - start)
+            logger.info(f"  Classical run {i+1}/{runs}: {c_times[-1]:.4f}s")
+        
+        # Calculate statistics
+        q_avg = np.mean(q_times)
+        q_std = np.std(q_times)
+        c_avg = np.mean(c_times)
+        c_std = np.std(c_times)
+        ratio = q_avg / c_avg
+        
+        # Store results
+        results["quantum"]["time"].append(q_avg)
+        results["quantum"]["std"].append(q_std)
+        results["classical"]["time"].append(c_avg)
+        results["classical"]["std"].append(c_std)
+        results["ratio"].append(ratio)
+        
+        logger.info(f"  Dimension {dim} results:")
+        logger.info(f"    Quantum: {q_avg:.4f}s ± {q_std:.4f}")
+        logger.info(f"    Classical: {c_avg:.4f}s ± {c_std:.4f}")
+        logger.info(f"    Ratio (Q/C): {ratio:.2f}x")
+    
+    return results
+
+def compare_optimization_levels(levels=[1, 2, 3], model_dim=8, batch_size=2, seq_len=3, runs=3):
+    """
+    Compare different optimization levels for quantum circuits.
+    
+    Args:
+        levels: List of optimization levels to test
+        model_dim: Model dimension for testing
+        batch_size: Batch size for testing
+        seq_len: Sequence length for testing
+        runs: Number of runs for each configuration
+    
+    Returns:
+        Dictionary of benchmark results
+    """
+    results = {
+        "levels": levels,
+        "times": [],
+        "std": [],
+    }
+    
+    original_level = config.circuit_optimization_level
+    
+    for level in levels:
+        logger.info(f"Testing optimization level {level}")
+        
+        # Set optimization level
+        config.circuit_optimization_level = level
+        
+        # Create model
+        model = Model(vocab_size=100, d_model=model_dim, n_layers=2, d_ff=model_dim*4)
+        
+        # Create input
+        batch = torch.zeros(batch_size, seq_len, dtype=torch.long)
+        
+        # Clear the lru_cache to ensure circuits are rebuilt
+        from model import create_inner_product_circuit, create_matrix_vector_circuit
+        create_inner_product_circuit.cache_clear()
+        create_matrix_vector_circuit.cache_clear()
+        
+        # Run benchmark
+        times = []
+        for i in range(runs):
+            start = time.time()
+            forward_pass(model, batch, use_quantum=True)
+            times.append(time.time() - start)
+            logger.info(f"  Run {i+1}/{runs}: {times[-1]:.4f}s")
+        
+        # Calculate statistics
+        avg = np.mean(times)
+        std = np.std(times)
+        
+        # Store results
+        results["times"].append(avg)
+        results["std"].append(std)
+        
+        logger.info(f"  Level {level} results: {avg:.4f}s ± {std:.4f}")
+    
+    # Restore original level
+    config.circuit_optimization_level = original_level
+    
+    return results
+
+def plot_benchmark_results(results):
+    """
+    Plot benchmark results comparing quantum vs classical execution.
+    
+    Args:
+        results: Results dictionary from run_benchmark function
+    """
+    plt.figure(figsize=(10, 6))
+    
+    x = results["dimensions"]
+    q_y = results["quantum"]["time"]
+    q_err = results["quantum"]["std"]
+    c_y = results["classical"]["time"]
+    c_err = results["classical"]["std"]
+    
+    plt.errorbar(x, q_y, yerr=q_err, marker='o', label='Quantum')
+    plt.errorbar(x, c_y, yerr=c_err, marker='s', label='Classical')
+    
+    plt.xlabel('Model Dimension')
+    plt.ylabel('Execution Time (s)')
+    plt.title('Quantum vs Classical Execution Time')
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    
+    # Add ratio as text
+    for i, dim in enumerate(x):
+        plt.text(dim, max(q_y[i], c_y[i]) + 0.1, 
+                f"Ratio: {results['ratio'][i]:.2f}x", 
+                ha='center')
+    
+    plt.tight_layout()
+    plt.savefig('quantum_classical_comparison.png')
+    plt.close()
+    
+    logger.info("Saved comparison plot to 'quantum_classical_comparison.png'")
+
+def plot_optimization_comparison(results):
+    """
+    Plot benchmark results for different optimization levels.
+    
+    Args:
+        results: Results dictionary from compare_optimization_levels function
+    """
+    plt.figure(figsize=(8, 5))
+    
+    x = results["levels"]
+    y = results["times"]
+    err = results["std"]
+    
+    plt.errorbar(x, y, yerr=err, marker='o')
+    
+    plt.xlabel('Optimization Level')
+    plt.ylabel('Execution Time (s)')
+    plt.title('Circuit Optimization Level Performance')
+    plt.grid(True, alpha=0.3)
+    plt.xticks(x)
+    
+    plt.tight_layout()
+    plt.savefig('optimization_levels_comparison.png')
+    plt.close()
+    
+    logger.info("Saved optimization comparison plot to 'optimization_levels_comparison.png'")
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Run HybrIQ benchmarks')
+    parser.add_argument('--benchmark-type', choices=['model-size', 'optimization'], 
+                       default='model-size', help='Type of benchmark to run')
+    parser.add_argument('--dimensions', type=int, nargs='+', default=[4, 8, 16],
+                       help='Model dimensions to test')
+    parser.add_argument('--opt-levels', type=int, nargs='+', default=[1, 2, 3],
+                       help='Optimization levels to test')
+    parser.add_argument('--runs', type=int, default=3,
+                       help='Number of runs for each configuration')
+    parser.add_argument('--batch-size', type=int, default=2,
+                       help='Batch size for testing')
+    parser.add_argument('--seq-len', type=int, default=3,
+                       help='Sequence length for testing')
+    
+    args = parser.parse_args()
+    
+    if args.benchmark_type == 'model-size':
+        logger.info("Running model size benchmark...")
+        results = run_benchmark(
+            model_dims=args.dimensions,
+            batch_size=args.batch_size,
+            seq_len=args.seq_len,
+            runs=args.runs
+        )
+        plot_benchmark_results(results)
+    else:  # optimization benchmark
+        logger.info("Running optimization level benchmark...")
+        results = compare_optimization_levels(
+            levels=args.opt_levels,
+            model_dim=8,  # Fixed dimension for optimization comparison
+            batch_size=args.batch_size,
+            seq_len=args.seq_len,
+            runs=args.runs
+        )
+        plot_optimization_comparison(results)
+    
+    logger.info("Benchmarking completed!")
